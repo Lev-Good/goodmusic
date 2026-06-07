@@ -1,0 +1,267 @@
+@import "tailwindcss";
+
+:root {
+  --bg-app: #08090c;
+  --bg-sidebar: #0a0b0f;
+  --bg-main: #0d0e12;
+  --bg-card: #0b0c10;
+  --bg-card-hover: rgba(255, 255, 255, 0.03);
+  --bg-input: rgba(0, 0, 0, 0.4);
+  --text-primary: #f3f4f6;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --border-color: rgba(255, 255, 255, 0.05);
+  --border-color-focus: rgba(245, 158, 11, 0.25);
+  --bg-drawer: #08090c;
+}
+
+html.light {
+  --bg-app: #f3f4f6;
+  --bg-sidebar: #ffffff;
+  --bg-main: #f9fafb;
+  --bg-card: #ffffff;
+  --bg-card-hover: rgba(0, 0, 0, 0.02);
+  --bg-input: rgba(255, 255, 255, 0.9);
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-muted: #9ca3af;
+  --border-color: rgba(0, 0, 0, 0.06);
+  --border-color-focus: rgba(245, 158, 11, 0.4);
+  --bg-drawer: #ffffff;
+}
+
+@theme {
+  --color-brand: #f59e0b; /* Musicolet Amber */
+  --color-brand-glow: rgba(245, 158, 11, 0.15);
+  --color-brand-bright: #fbbf24;
+  
+  --color-bg-app: var(--bg-app);
+  --color-bg-sidebar: var(--bg-sidebar);
+  --color-bg-main: var(--bg-main);
+  --color-bg-card: var(--bg-card);
+  --color-bg-card-hover: var(--bg-card-hover);
+  --color-bg-input: var(--bg-input);
+  --color-bg-drawer: var(--bg-drawer);
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-muted: var(--text-muted);
+  --color-border-custom: var(--border-color);
+  --color-border-focus: var(--border-color-focus);
+
+  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  
+  --animate-spin-slow: spin 20s linear infinite;
+  --animate-pulse-play: pulse-play 2s infinite;
+  
+  @keyframes pulse-play {
+    0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+  }
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.25s ease, color 0.25s ease;
+}
+
+/* Custom Utilities */
+@utility custom-scrollbar {
+  &::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(120, 120, 120, 0.15);
+    border-radius: 99px;
+    transition: background 0.2s ease;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--color-brand);
+  }
+}
+
+@utility vinyl-grooves {
+  background-image: repeating-radial-gradient(
+    circle,
+    transparent,
+    transparent 3px,
+    rgba(255, 255, 255, 0.015) 3px,
+    rgba(255, 255, 255, 0.015) 4px
+  );
+}
+
+@utility vinyl-sheen {
+  background: conic-gradient(
+    from 45deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.02) 12%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.02) 62%,
+    transparent 75%,
+    transparent 100%
+  );
+}
+
+@utility lyrics-mask {
+  mask-image: linear-gradient(to bottom, transparent 0%, white 20%, white 80%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, white 20%, white 80%, transparent 100%);
+}
+
+/* Custom slider styles for range inputs */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(120, 120, 120, 0.15);
+  border-radius: 99px;
+  outline: none;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  transition: transform 0.1s ease, opacity 0.1s ease;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  opacity: 0;
+}
+
+input[type="range"]:hover::-webkit-slider-thumb,
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+  opacity: 1;
+}
+
+/* Seek bar — filled track via CSS custom property --seek-pct */
+.seek-bar {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 99px;
+  outline: none;
+  cursor: pointer;
+  background: linear-gradient(
+    to left,
+    rgba(120, 120, 120, 0.2) var(--seek-pct, 0%),
+    var(--color-brand) var(--seek-pct, 0%)
+  );
+  transition: height 0.15s ease;
+}
+
+.seek-bar:hover {
+  height: 6px;
+}
+
+.seek-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  transition: transform 0.1s ease;
+  opacity: 0;
+}
+
+.seek-bar:hover::-webkit-slider-thumb,
+.seek-bar:active::-webkit-slider-thumb {
+  opacity: 1;
+  transform: scale(1.1);
+}
+
+/* Volume bar — thinner filled track */
+.volume-bar {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 3px;
+  border-radius: 99px;
+  outline: none;
+  cursor: pointer;
+  background: linear-gradient(
+    to left,
+    rgba(120, 120, 120, 0.2) var(--vol-pct, 80%),
+    var(--color-brand) var(--vol-pct, 80%)
+  );
+}
+
+.volume-bar::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+  opacity: 0;
+  transition: opacity 0.1s ease, transform 0.1s ease;
+}
+
+.volume-bar:hover::-webkit-slider-thumb {
+  opacity: 1;
+}
+
+/* Scan progress pulsing dot */
+@keyframes scan-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.scan-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-brand);
+  animation: scan-dot 1.2s ease-in-out infinite;
+  display: inline-block;
+}
+
+/* EQ Slider Vertical */
+.eq-slider-input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 4px;
+  height: 120px;
+  background: rgba(120, 120, 120, 0.15);
+  border-radius: 99px;
+  writing-mode: vertical-lr;
+  direction: rtl;
+  outline: none;
+}
+
+.eq-slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 8px;
+  border-radius: 3px;
+  background: var(--color-brand);
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.4);
+  cursor: pointer;
+}
+
+.eq-slider-input:hover::-webkit-slider-thumb {
+  background: #fff;
+  transform: scale(1.15);
+}
+
+.paused {
+  animation-play-state: paused;
+}
