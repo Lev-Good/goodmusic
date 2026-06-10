@@ -151,14 +151,9 @@ export const QueueManager: React.FC<QueueManagerProps> = ({
 
   const handleExportPlaylist = async () => {
     try {
-      const { save } = await import('@tauri-apps/plugin-dialog');
-      const { invoke } = await import('@tauri-apps/api/core');
+      if (!window.electronAPI) return;
       
-      const filePath = await save({
-        filters: [{ name: 'JSON Playlist', extensions: ['json'] }],
-        defaultPath: `${activeQueue.name || `playlist_${activeQueueId + 1}`}.json`
-      });
-      
+      const filePath = await window.electronAPI.saveFileDialog(`${activeQueue.name || `playlist_${activeQueueId + 1}`}.json`);
       if (!filePath) return;
       
       const content = JSON.stringify({
@@ -173,7 +168,7 @@ export const QueueManager: React.FC<QueueManagerProps> = ({
         }))
       }, null, 2);
       
-      await invoke('write_text_file', { filePath, content });
+      await window.electronAPI.writeTextFile(filePath, content);
       alert(lang === 'he' ? 'רשימת ההשמעה יוצאה בהצלחה!' : 'Playlist exported successfully!');
     } catch (err) {
       console.error('Failed to export playlist:', err);
@@ -183,17 +178,12 @@ export const QueueManager: React.FC<QueueManagerProps> = ({
 
   const handleImportPlaylist = async () => {
     try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
-      const { invoke } = await import('@tauri-apps/api/core');
+      if (!window.electronAPI) return;
       
-      const selected = await open({
-        filters: [{ name: 'JSON Playlist', extensions: ['json'] }],
-        multiple: false
-      });
+      const selected = await window.electronAPI.openFileDialog();
+      if (!selected) return;
       
-      if (!selected || typeof selected !== 'string') return;
-      
-      const content = await invoke<string>('read_text_file', { filePath: selected });
+      const content = await window.electronAPI.readTextFile(selected);
       const parsed = JSON.parse(content);
       
       if (parsed && Array.isArray(parsed.tracks)) {

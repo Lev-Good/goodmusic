@@ -212,27 +212,3 @@ export function getAllTracksFromNode(node: FolderNode): Track[] {
   }
   return tracks;
 }
-
-// Selects and scans a directory using Tauri's native dialog and native Rust backend command
-export async function scanDirectoryTauri(): Promise<FolderNode | null> {
-  try {
-    const { open } = await import('@tauri-apps/plugin-dialog');
-    const { invoke } = await import('@tauri-apps/api/core');
-
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: 'בחר תיקיית מוזיקה / Select Music Folder',
-    });
-
-    if (!selected || typeof selected !== 'string') {
-      return null;
-    }
-
-    const rootNode = await invoke<FolderNode>('scan_directory_native', { dirPath: selected });
-    return rootNode;
-  } catch (err) {
-    console.error('Failed to select or scan directory in Tauri:', err);
-    throw err;
-  }
-}

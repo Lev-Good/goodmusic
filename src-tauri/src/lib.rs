@@ -314,6 +314,45 @@ fn read_text_file(file_path: String) -> Result<String, String> {
     std::fs::read_to_string(file_path).map_err(|e| e.to_string())
 }
 
+#[tauri::command]
+fn trash_file(file_path: String) -> Result<bool, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let script = format!(
+            "Add-Type -AssemblyName Microsoft.VisualBasic; [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile('{}', 'OnlyErrorDialogs', 'SendToRecycleBin')",
+            file_path.replace('\'', "''")
+        );
+        std::process::Command::new("powershell")
+            .args(["-NoProfile", "-Command", &script])
+            .output()
+            .map(|output| output.status.success())
+            .map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        std::fs::remove_file(file_path).map(|_| true).map_err(|e| e.to_string())
+    }
+}
+
+#[tauri::command]
+fn rename_file(old_path: String, new_path: String) -> Result<bool, String> {
+    std::fs::rename(old_path, new_path).map(|_| true).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn copy_file(src_path: String, dest_path: String) -> Result<bool, String> {
+    std::fs::copy(src_path, dest_path).map(|_| true).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn move_file(src_path: String, dest_path: String) -> Result<bool, String> {
+    if std::fs::rename(&src_path, &dest_path).is_ok() {
+        return Ok(true);
+    }
+    std::fs::copy(&src_path, &dest_path).map_err(|e| e.to_string())?;
+    trash_file(src_path)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -401,7 +440,11 @@ pub fn run() {
             parse_metadata_native,
             write_mp3_tags,
             write_text_file,
-            read_text_file
+            read_text_file,
+            trash_file,
+            rename_file,
+            copy_file,
+            move_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

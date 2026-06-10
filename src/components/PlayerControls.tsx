@@ -25,7 +25,7 @@ interface PlayerControlsProps {
   isMuted: boolean;
   isQueueOpen: boolean;
   onPlayPause: () => void;
-  onNext: (isNaturalEnd?: boolean) => void;
+  onNext: () => void;
   onPrev: () => void;
   onToggleShuffle: () => void;
   onCycleRepeatMode: () => void;
@@ -166,7 +166,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
     };
 
     const handleEnded = () => {
-      onNext(true);
+      onNext();
     };
 
     elA.addEventListener('timeupdate', handleTimeUpdate);
@@ -289,7 +289,7 @@ export const PlayerControls: React.FC<PlayerControlsProps> = ({
           </button>
 
           <button
-            onClick={() => onNext(false)}
+            onClick={onNext}
             disabled={!currentTrack}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-neutral-400 hover:text-white disabled:opacity-25 transition-colors cursor-pointer"
             title={localT('nextTitle')}

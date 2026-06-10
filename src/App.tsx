@@ -150,6 +150,10 @@ const TRANSLATIONS = {
     sleepTimerEndSongBtn: 'כבה בסוף השיר הנוכחי',
     sleepTimerEndSongBtnActive: '✓ מופעל: בסוף השיר',
     sleepTimerCancelBtn: 'בטל טיימר',
+    sleepTimerSongsLeft: 'יכבה בעוד {count} שירים',
+    sleepTimerCustomMinutes: 'דקות מותאם אישית:',
+    sleepTimerCustomSongs: 'שירים מותאם אישית:',
+    sleepTimerSet: 'הפעל',
     systemInfoTitle: 'מידע על המוצר',
     systemInfoText1: 'Musicolet Desktop v1.0.0 Redesigned',
     systemInfoText2: 'מפותח ב-React + Electron + Tailwind CSS v4.0.',
@@ -255,6 +259,10 @@ const TRANSLATIONS = {
     sleepTimerEndSongBtn: 'Stop at the end of current track',
     sleepTimerEndSongBtnActive: '✓ Active: End of track',
     sleepTimerCancelBtn: 'Cancel Timer',
+    sleepTimerSongsLeft: 'Off in {count} songs',
+    sleepTimerCustomMinutes: 'Custom minutes:',
+    sleepTimerCustomSongs: 'Custom songs:',
+    sleepTimerSet: 'Set',
     systemInfoTitle: 'Product Information',
     systemInfoText1: 'Musicolet Desktop v1.0.0 Redesigned',
     systemInfoText2: 'Developed using React + Electron + Tailwind CSS v4.0.',
@@ -467,19 +475,10 @@ export default function App() {
 
   const toggleMiniPlayer = async () => {
     try {
-      const { getCurrentWindow, LogicalSize } = await import('@tauri-apps/api/window');
-      const appWindow = getCurrentWindow();
-      
-      if (!isMiniPlayer) {
-        await appWindow.setMinSize(new LogicalSize(320, 370));
-        await appWindow.setSize(new LogicalSize(320, 370));
-        await appWindow.setAlwaysOnTop(true);
-        setIsMiniPlayer(true);
-      } else {
-        await appWindow.setMinSize(new LogicalSize(900, 650));
-        await appWindow.setSize(new LogicalSize(1250, 800));
-        await appWindow.setAlwaysOnTop(false);
-        setIsMiniPlayer(false);
+      if (window.electronAPI) {
+        const nextState = !isMiniPlayer;
+        await window.electronAPI.setMiniPlayer(nextState);
+        setIsMiniPlayer(nextState);
       }
     } catch (err) {
       console.error('Failed to toggle MiniPlayer size:', err);
@@ -571,7 +570,6 @@ export default function App() {
     const listTracks = getSmartPlaylistTracks(type);
     const name = getSmartPlaylistName(type);
     
-    // Simple helper to shuffle an array
     const shuffleArrayLocal = (array: any[]) => {
       const copy = [...array];
       for (let i = copy.length - 1; i > 0; i--) {
@@ -583,7 +581,6 @@ export default function App() {
     
     return (
       <div className="w-full h-full flex flex-col overflow-hidden p-6 animate-in fade-in duration-200" dir={lang === 'he' ? 'rtl' : 'ltr'}>
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-border-custom pb-4 mb-4 select-none flex-shrink-0">
           <div className="flex items-center gap-3">
             <button
@@ -615,7 +612,6 @@ export default function App() {
           )}
         </div>
 
-        {/* Tracks List */}
         <div className="flex-1 overflow-y-auto min-h-0 flex flex-col gap-1.5 pr-1">
           {listTracks.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center text-center p-8 select-none">
@@ -643,7 +639,6 @@ export default function App() {
                       : 'bg-bg-app border-transparent hover:bg-bg-card-hover hover:border-border-custom'
                   }`}
                 >
-                  {/* Track info & Cover */}
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="text-[10px] text-text-muted font-bold w-5 text-center tabular-nums">
                       {index + 1}
@@ -665,9 +660,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Ratings and Stats */}
                   <div className="flex items-center gap-4 flex-shrink-0 select-none">
-                    {/* Stars */}
                     {rating > 0 && (
                       <div className="flex items-center text-amber-400">
                         {Array.from({ length: rating }).map((_, i) => (
@@ -677,7 +670,6 @@ export default function App() {
                         ))}
                       </div>
                     )}
-                    {/* Play count */}
                     {playCount > 0 && (
                       <span className="text-[9px] text-text-muted font-bold bg-neutral-900 border border-white/5 px-2 py-0.5 rounded-full">
                         {lang === 'he' ? `${playCount} שמיעות` : `${playCount} plays`}
@@ -693,7 +685,6 @@ export default function App() {
     );
   };
 
-  // Theme state ('dark' | 'light' | 'system')
   const [theme, setTheme] = useState<'dark' | 'light' | 'system'>(() => {
     return (localStorage.getItem('theme') as 'dark' | 'light' | 'system') || 'dark';
   });
@@ -707,7 +698,6 @@ export default function App() {
         setQueues(prev => prev.map(q => {
           const savedQ = parsed.find(sq => sq.id === q.id);
           if (!savedQ) return q;
-          // Restore metadata only — file handles cannot be serialized
           const restoredTracks = savedQ.trackMeta.map(m => ({
             id: m.id,
             name: m.name,
@@ -730,12 +720,13 @@ export default function App() {
     }
   }, []);
 
-  // Sleep Timer states
-  const [sleepTimeLeft, setSleepTimeLeft] = useState<number | null>(null); // seconds
+  const [sleepTimeLeft, setSleepTimeLeft] = useState<number | null>(null);
   const [sleepEndSong, setSleepEndSong] = useState(false);
-  
+  const [sleepSongsLeft, setSleepSongsLeft] = useState<number | null>(null);
+  const [customSleepMinutes, setCustomSleepMinutes] = useState<string>('');
+  const [customSleepSongs, setCustomSleepSongs] = useState<string>('');
   const [isDragging, setIsDragging] = useState(false);
-  const [isTagModalOpen, setIsTagModalOpen] = useState(false);
+  const [editingTracks, setEditingTracks] = useState<Track[] | null>(null);
 
   const [eqSettings, setEqSettings] = useState<EQSettings>({
     enabled: true,
@@ -864,6 +855,11 @@ export default function App() {
 
   const handleExportAllSettings = async () => {
     try {
+      if (!window.electronAPI) return;
+      
+      const filePath = await window.electronAPI.saveFileDialog('musicolet_backup.json');
+      if (!filePath) return;
+      
       const backupData = {
         version: '1.0.0',
         timestamp: Date.now(),
@@ -896,31 +892,7 @@ export default function App() {
       };
       
       const content = JSON.stringify(backupData, null, 2);
-      const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
-
-      if (isTauri) {
-        const { save } = await import('@tauri-apps/plugin-dialog');
-        const { invoke } = await import('@tauri-apps/api/core');
-        
-        const filePath = await save({
-          filters: [{ name: 'JSON Backup', extensions: ['json'] }],
-          defaultPath: 'goodmusic_backup.json'
-        });
-        
-        if (!filePath) return;
-        await invoke('write_text_file', { filePath, content });
-      } else {
-        const blob = new Blob([content], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'goodmusic_backup.json';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }
-      
+      await window.electronAPI.writeTextFile(filePath, content);
       alert(lang === 'he' ? 'הגיבוי נוצר בהצלחה!' : 'Backup created successfully!');
     } catch (err) {
       console.error('Failed to export settings:', err);
@@ -930,40 +902,12 @@ export default function App() {
 
   const handleImportAllSettings = async () => {
     try {
-      const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
-      let content = '';
-
-      if (isTauri) {
-        const { open } = await import('@tauri-apps/plugin-dialog');
-        const { invoke } = await import('@tauri-apps/api/core');
-        
-        const selected = await open({
-          filters: [{ name: 'JSON Backup', extensions: ['json'] }],
-          multiple: false
-        });
-        
-        if (!selected || typeof selected !== 'string') return;
-        content = await invoke<string>('read_text_file', { filePath: selected });
-      } else {
-        content = await new Promise<string>((resolve, reject) => {
-          const input = document.createElement('input');
-          input.type = 'file';
-          input.accept = '.json';
-          input.onchange = (e) => {
-            const file = (e.target as HTMLInputElement).files?.[0];
-            if (!file) {
-              reject(new Error('No file selected'));
-              return;
-            }
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = () => reject(reader.error);
-            reader.readAsText(file);
-          };
-          input.click();
-        });
-      }
+      if (!window.electronAPI) return;
       
+      const selected = await window.electronAPI.openFileDialog();
+      if (!selected) return;
+      
+      const content = await window.electronAPI.readTextFile(selected);
       const parsed = JSON.parse(content);
       
       if (parsed && parsed.version === '1.0.0' && Array.isArray(parsed.queues)) {
@@ -1053,35 +997,6 @@ export default function App() {
     };
   }, []);
 
-  // Listen to native media-action events (e.g. from System Tray)
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    
-    const setupListener = async () => {
-      try {
-        const { listen } = await import('@tauri-apps/api/event');
-        unlisten = await listen<string>('media-action', (event) => {
-          const action = event.payload;
-          if (action === 'play-pause') {
-            handlePlayPause();
-          } else if (action === 'next') {
-            handleNext(false);
-          } else if (action === 'prev') {
-            handlePrev();
-          }
-        });
-      } catch (err) {
-        console.error('Failed to register tauri media-action listener:', err);
-      }
-    };
-
-    setupListener();
-
-    return () => {
-      if (unlisten) unlisten();
-    };
-  }, [isPlaying, currentTrack, activeQueueId, queues, shuffle, repeatMode, sleepEndSong]);
-
   // Theme Sync Effect
   useEffect(() => {
     const root = window.document.documentElement;
@@ -1138,17 +1053,18 @@ export default function App() {
     }
   }, [rootFolder]);
 
-  // Auto-restore library folder on startup in Tauri
+  // Auto-restore library folder on startup in Electron
   useEffect(() => {
     const savedPath = localStorage.getItem('musicolet-library-path');
     if (savedPath) {
       const restoreLibrary = async () => {
         try {
           setIsScanning(true);
-          const { invoke } = await import('@tauri-apps/api/core');
-          const rootNode = await invoke<FolderNode>('scan_directory_native', { dirPath: savedPath });
-          if (rootNode) {
-            setRootFolder(rootNode);
+          if (window.electronAPI) {
+            const rootNode = await window.electronAPI.scanDirectoryNative(savedPath);
+            if (rootNode) {
+              setRootFolder(rootNode);
+            }
           }
         } catch (err) {
           console.warn('Failed to auto-restore library folder on startup:', err);
@@ -1160,6 +1076,7 @@ export default function App() {
     }
   }, []);
 
+  // Media Actions tray listener
   useEffect(() => {
     if ((window as any).electronAPI?.onMediaAction) {
       const unsubscribe = (window as any).electronAPI.onMediaAction((action: string) => {
@@ -1231,8 +1148,9 @@ export default function App() {
       try {
         let metadata;
         if (track.path && !(track.file || track.fileHandle)) {
-          const { invoke } = await import('@tauri-apps/api/core');
-          metadata = await invoke<any>('parse_metadata_native', { filePath: track.path });
+          if (window.electronAPI) {
+            metadata = await window.electronAPI.parseMetadataNative(track.path);
+          }
         } else {
           let fileObj: File;
           if (track.file) {
@@ -1323,9 +1241,8 @@ export default function App() {
       } else if (track.fileHandle) {
         fileObjOrUrl = await track.fileHandle.getFile();
       } else if (track.path) {
-        // Native Tauri path playback
-        const { convertFileSrc } = await import('@tauri-apps/api/core');
-        fileObjOrUrl = convertFileSrc(track.path);
+        // Native local path playback in Electron
+        fileObjOrUrl = `file://${track.path}`;
       } else {
         throw new Error('No track file content found');
       }
@@ -1336,8 +1253,9 @@ export default function App() {
         try {
           let metadata;
           if (track.path && !(track.file || track.fileHandle)) {
-            const { invoke } = await import('@tauri-apps/api/core');
-            metadata = await invoke<any>('parse_metadata_native', { filePath: track.path });
+            if (window.electronAPI) {
+              metadata = await window.electronAPI.parseMetadataNative(track.path);
+            }
           } else if (fileObjOrUrl instanceof File) {
             metadata = await parseMetadata(fileObjOrUrl);
           }
@@ -1591,6 +1509,19 @@ export default function App() {
       return;
     }
 
+    if (sleepSongsLeft !== null) {
+      const remaining = sleepSongsLeft - 1;
+      if (remaining <= 0) {
+        setSleepSongsLeft(null);
+        audioEngine.fadeAndPause(() => {
+          setIsPlaying(false);
+        });
+        return;
+      } else {
+        setSleepSongsLeft(remaining);
+      }
+    }
+
     let nextIndex = activeQueue.currentIndex;
 
     if (repeatMode === 'one') {
@@ -1669,12 +1600,13 @@ export default function App() {
     audioEngine.setPitch(val);
   };
 
-  const handleSaveTags = (trackId: string, updatedFields: { name: string; artist: string; album: string; lyrics?: string }) => {
+  const handleSaveBatchTags = (updatesMap: Record<string, { name?: string; artist?: string; album?: string; lyrics?: string; coverUrl?: string }>) => {
     setQueues((prev) =>
       prev.map((q) => {
         const updatedTracks = q.tracks.map((t) => {
-          if (t.id === trackId) {
-            return { ...t, ...updatedFields };
+          const updates = updatesMap[t.id];
+          if (updates) {
+            return { ...t, ...updates };
           }
           return t;
         });
@@ -1682,15 +1614,16 @@ export default function App() {
       })
     );
 
-    if (currentTrack?.id === trackId) {
-      setCurrentTrack((prev) => (prev ? { ...prev, ...updatedFields } : null));
+    if (currentTrack && updatesMap[currentTrack.id]) {
+      setCurrentTrack((prev) => (prev ? { ...prev, ...updatesMap[prev.id] } : null));
     }
 
     if (rootFolder) {
       const updateNode = (node: FolderNode): FolderNode => {
         const updatedTracks = node.tracks.map((t) => {
-          if (t.id === trackId) {
-            return { ...t, ...updatedFields };
+          const updates = updatesMap[t.id];
+          if (updates) {
+            return { ...t, ...updates };
           }
           return t;
         });
@@ -1698,6 +1631,127 @@ export default function App() {
         return { ...node, tracks: updatedTracks, subfolders: updatedSubs };
       };
       setRootFolder(updateNode(rootFolder));
+    }
+  };
+
+  const getBaseName = (pathStr: string): string => {
+    const parts = pathStr.split(/[\\/]/);
+    return parts[parts.length - 1] || 'track.mp3';
+  };
+
+  const refreshLibrary = async () => {
+    const savedPath = localStorage.getItem('musicolet-library-path');
+    if (savedPath && window.electronAPI) {
+      try {
+        setIsScanning(true);
+        const rootNode = await window.electronAPI.scanDirectoryNative(savedPath);
+        if (rootNode) {
+          setRootFolder(rootNode);
+        }
+      } catch (err) {
+        console.error('Failed to refresh library folder:', err);
+      } finally {
+        setIsScanning(false);
+      }
+    }
+  };
+
+  const handleTrashBatchTracks = async (tracksToTrash: Track[]) => {
+    const trashIds = new Set(tracksToTrash.map(t => t.id));
+
+    if (window.electronAPI) {
+      for (const track of tracksToTrash) {
+        try {
+          await window.electronAPI.trashFile(track.path);
+        } catch (err) {
+          console.error("Failed to trash file natively:", track.path, err);
+        }
+      }
+    }
+
+    setQueues((prev) =>
+      prev.map((q) => {
+        const updatedTracks = q.tracks.filter((t) => !trashIds.has(t.id));
+        let nextIndex = q.currentIndex;
+        if (q.id === activeQueueId) {
+          const isCurrentRemoved = q.currentIndex !== -1 && trashIds.has(q.tracks[q.currentIndex]?.id);
+          if (isCurrentRemoved) {
+            if (updatedTracks.length === 0) {
+              nextIndex = -1;
+              audioEngine.pause();
+              setIsPlaying(false);
+              setCurrentTrack(null);
+            } else {
+              nextIndex = q.currentIndex;
+              if (nextIndex >= updatedTracks.length) {
+                nextIndex = 0;
+              }
+              setTimeout(() => {
+                if (updatedTracks[nextIndex]) {
+                  playTrack(updatedTracks[nextIndex], true);
+                }
+              }, 50);
+            }
+          } else if (q.currentIndex !== -1) {
+            const currentTrackId = q.tracks[q.currentIndex]?.id;
+            nextIndex = updatedTracks.findIndex(t => t.id === currentTrackId);
+          }
+        } else {
+          if (q.currentIndex !== -1) {
+            const currentTrackId = q.tracks[q.currentIndex]?.id;
+            nextIndex = updatedTracks.findIndex(t => t.id === currentTrackId);
+          }
+        }
+
+        return {
+          ...q,
+          tracks: updatedTracks,
+          currentIndex: nextIndex
+        };
+      })
+    );
+
+    if (currentTrack && trashIds.has(currentTrack.id)) {
+      audioEngine.pause();
+      setIsPlaying(false);
+      setCurrentTrack(null);
+    }
+
+    if (rootFolder) {
+      const removeTracksFromNode = (node: FolderNode): FolderNode => {
+        const updatedTracks = node.tracks.filter((t) => !trashIds.has(t.id));
+        const updatedSubs = node.subfolders.map(removeTracksFromNode);
+        return {
+          ...node,
+          tracks: updatedTracks,
+          subfolders: updatedSubs
+        };
+      };
+      setRootFolder(removeTracksFromNode(rootFolder));
+    }
+  };
+
+  const handleMoveBatchTracks = async (tracksToMove: Track[], targetDir: string, isMove: boolean) => {
+    if (window.electronAPI) {
+      for (const track of tracksToMove) {
+        const baseName = getBaseName(track.path);
+        const targetPath = targetDir.endsWith('\\') || targetDir.endsWith('/') 
+          ? `${targetDir}${baseName}` 
+          : `${targetDir}\\${baseName}`;
+        
+        try {
+          if (isMove) {
+            await window.electronAPI.moveFile(track.path, targetPath);
+          } else {
+            await window.electronAPI.copyFile(track.path, targetPath);
+          }
+        } catch (err) {
+          console.error(`Failed to ${isMove ? 'move' : 'copy'} file natively:`, track.path, err);
+        }
+      }
+      await refreshLibrary();
+    } else {
+      console.warn("Direct file operations are not supported in Web mode.");
     }
   };
 
@@ -1754,95 +1808,97 @@ export default function App() {
   if (isMiniPlayer) {
     return (
       <div 
-        className="w-full h-screen bg-bg-app flex flex-col justify-between p-4 overflow-hidden relative select-none" 
+        className="w-full h-screen bg-bg-app flex items-center justify-between p-3 overflow-hidden relative select-none" 
         dir={lang === 'he' ? 'rtl' : 'ltr'}
       >
-        {/* Compact Background */}
+        {/* Background blurs */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-30">
-          <div className="absolute top-[-20%] left-[-20%] w-[80%] h-[80%] rounded-full bg-brand/10 blur-[60px]"></div>
+          <div className="absolute top-[-20%] left-[-20%] w-[80%] h-[80%] rounded-full bg-brand/10 blur-[40px]"></div>
         </div>
 
-        {/* Top bar with back button */}
-        <div className="w-full flex items-center justify-between z-10">
-          <span className="text-[10px] text-text-muted font-bold">MiniPlayer</span>
-          <button
-            onClick={toggleMiniPlayer}
-            className="p-1.5 rounded-lg bg-bg-card border border-border-custom hover:border-brand/40 text-[9px] font-bold text-text-secondary cursor-pointer transition-colors"
-            title={lang === 'he' ? 'חזור לנגן המלא' : 'Back to Full Player'}
-          >
-            {lang === 'he' ? 'נגן מלא' : 'Full Player'}
-          </button>
-        </div>
-
-        {/* Center: Album Cover & Track Title */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-3 z-10 overflow-hidden my-2">
+        {/* Track Cover (Left/Right) */}
+        <div className="relative w-16 h-16 rounded-xl overflow-hidden shadow-lg shadow-black/30 border border-white/10 flex-shrink-0 z-10">
           {currentTrack ? (
-            <>
-              {/* Spinning Vinyl/Cover */}
-              <div className="relative w-32 h-32 rounded-full overflow-hidden shadow-xl shadow-black/40 border border-white/10 flex-shrink-0">
-                {currentTrack.coverUrl ? (
-                  <img
-                    src={currentTrack.coverUrl}
-                    alt="cover"
-                    className={`w-full h-full object-cover ${isPlaying ? 'animate-spin-slow' : ''}`}
-                  />
-                ) : (
-                  <div className="w-full h-full bg-neutral-900 flex items-center justify-center text-brand"
-                    style={{
-                      background: `linear-gradient(135deg,
-                        hsl(${(currentTrack.name.charCodeAt(0) * 37) % 360}, 40%, 18%) 0%,
-                        hsl(${(currentTrack.name.charCodeAt(0) * 37 + 60) % 360}, 30%, 10%) 100%
-                      )`
-                    }}
-                  >
-                    <Disc size={40} className={`text-white/20 ${isPlaying ? 'animate-spin-slow' : ''}`} strokeWidth={1} />
-                  </div>
-                )}
-                {/* Center dot for vinyl aesthetic */}
-                <div className="absolute inset-0 m-auto w-3.5 h-3.5 bg-bg-app rounded-full border border-black/40 shadow-inner"></div>
+            currentTrack.coverUrl ? (
+              <img
+                src={currentTrack.coverUrl}
+                alt="cover"
+                className={`w-full h-full object-cover ${isPlaying ? 'animate-spin-slow' : ''}`}
+              />
+            ) : (
+              <div className="w-full h-full bg-neutral-900 flex items-center justify-center text-brand"
+                style={{
+                  background: `linear-gradient(135deg,
+                    hsl(${(currentTrack.name.charCodeAt(0) * 37) % 360}, 40%, 18%) 0%,
+                    hsl(${(currentTrack.name.charCodeAt(0) * 37 + 60) % 360}, 30%, 10%) 100%
+                  )`
+                }}
+              >
+                <Disc size={28} className={`text-white/20 ${isPlaying ? 'animate-spin-slow' : ''}`} strokeWidth={1.5} />
               </div>
-
-              {/* Title & Artist */}
-              <div className="text-center w-full px-2 overflow-hidden">
-                <h4 className="text-xs font-bold text-text-primary truncate" title={currentTrack.name}>
-                  {currentTrack.name}
-                </h4>
-                <p className="text-[10px] text-text-secondary truncate mt-0.5" title={currentTrack.artist}>
-                  {currentTrack.artist}
-                </p>
-              </div>
-            </>
+            )
           ) : (
-            <div className="flex flex-col items-center justify-center text-center">
-              <Disc size={36} className="text-neutral-700 animate-pulse" />
-              <p className="text-[10px] text-text-muted mt-2">{lang === 'he' ? 'אין שיר מתנגן' : 'No track playing'}</p>
+            <div className="w-full h-full bg-neutral-900 flex items-center justify-center text-neutral-600">
+              <Disc size={28} className="text-neutral-700 animate-pulse" strokeWidth={1.5} />
             </div>
           )}
         </div>
 
-        {/* Bottom: Media Controls */}
-        <div className="w-full flex items-center justify-center gap-4 z-10 bg-bg-card border border-border-custom p-2 rounded-2xl flex-shrink-0">
+        {/* Track Metadata (Center) */}
+        <div className="flex-1 min-w-0 mx-3 flex flex-col justify-center z-10 select-text">
+          {currentTrack ? (
+            <>
+              <h4 className="text-[11px] font-bold text-text-primary truncate" title={currentTrack.name}>
+                {currentTrack.name}
+              </h4>
+              <p className="text-[9px] text-text-secondary truncate mt-0.5" title={currentTrack.artist}>
+                {currentTrack.artist}
+              </p>
+            </>
+          ) : (
+            <p className="text-[10px] text-text-muted">{lang === 'he' ? 'אין שיר מתנגן' : 'No track playing'}</p>
+          )}
+        </div>
+
+        {/* Action Controls & Full Player Mode Button (Right/Left) */}
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0 z-10">
+          {/* Back to Full Player Toggle */}
           <button
-            onClick={handlePrev}
-            disabled={!currentTrack}
-            className="p-1.5 text-neutral-400 hover:text-white disabled:opacity-20 transition-colors cursor-pointer"
+            onClick={toggleMiniPlayer}
+            className="px-2 py-0.5 rounded bg-bg-card border border-border-custom hover:border-brand/40 text-[8px] font-bold text-text-secondary cursor-pointer transition-colors flex items-center gap-1"
+            title={lang === 'he' ? 'חזור לנגן המלא' : 'Back to Full Player'}
           >
-            <SkipBack size={14} />
+            <Minimize2 size={9} />
+            <span>{lang === 'he' ? 'נגן מלא' : 'Full'}</span>
           </button>
-          <button
-            onClick={handlePlayPause}
-            disabled={!currentTrack}
-            className="w-8 h-8 rounded-full flex items-center justify-center text-black bg-brand hover:bg-brand-bright transition-colors cursor-pointer disabled:opacity-20"
-          >
-            {isPlaying ? <Pause size={13} className="fill-current" /> : <Play size={13} className="fill-current ml-0.5" />}
-          </button>
-          <button
-            onClick={() => handleNext(false)}
-            disabled={!currentTrack}
-            className="p-1.5 text-neutral-400 hover:text-white disabled:opacity-20 transition-colors cursor-pointer"
-          >
-            <SkipForward size={14} />
-          </button>
+
+          {/* Simple Compact Controls */}
+          <div className="flex items-center gap-1.5 bg-bg-card border border-border-custom p-1 rounded-lg">
+            <button
+              onClick={handlePrev}
+              disabled={!currentTrack}
+              className="p-1 text-neutral-400 hover:text-white disabled:opacity-20 transition-colors cursor-pointer"
+              title={lang === 'he' ? 'שיר קודם' : 'Previous'}
+            >
+              <SkipBack size={11} />
+            </button>
+            <button
+              onClick={handlePlayPause}
+              disabled={!currentTrack}
+              className="w-5 h-5 rounded-full flex items-center justify-center text-black bg-brand hover:bg-brand-bright transition-colors cursor-pointer disabled:opacity-20"
+              title={isPlaying ? (lang === 'he' ? 'השהה' : 'Pause') : (lang === 'he' ? 'נגן' : 'Play')}
+            >
+              {isPlaying ? <Pause size={9} className="fill-current" /> : <Play size={9} className="fill-current ml-0.5" />}
+            </button>
+            <button
+              onClick={() => handleNext(false)}
+              disabled={!currentTrack}
+              className="p-1 text-neutral-400 hover:text-white disabled:opacity-20 transition-colors cursor-pointer"
+              title={lang === 'he' ? 'שיר הבא' : 'Next'}
+            >
+              <SkipForward size={11} />
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -1983,7 +2039,7 @@ export default function App() {
             {rootFolder ? (
               <div className="flex items-center gap-1.5 text-[9px] text-text-muted">
                 <FolderHeart size={10} className="text-brand flex-shrink-0" />
-                <span className="truncate" title={rootFolder.name}>{rootFolder.name}</span>
+                <span className="truncate" title={rootFolder.path}>{rootFolder.name}</span>
               </div>
             ) : (
               <p className="text-[9px] text-text-muted text-center">{t('loadLibraryWarning')}</p>
@@ -2104,36 +2160,34 @@ export default function App() {
                       <button
                         onClick={async () => {
                           try {
-                            setIsScanning(true);
-                            setScannedCount(0);
-                            setScannedFilesCount(0);
-                            const { scanDirectoryTauri, getAllTracksFromNode } = await import('./utils/fileSystem');
-                            const rootNode = await scanDirectoryTauri();
-                            if (rootNode) {
-                              setRootFolder(rootNode);
-                              const tracks = getAllTracksFromNode(rootNode);
-                              setScannedCount(tracks.length);
-                              if (tracks.length > 0) {
-                                // Load tracks into active queue, set index to 0, but DO NOT start playing automatically
-                                setQueues((prev) =>
-                                  prev.map((q) =>
-                                    q.id === activeQueueId
-                                      ? { ...q, tracks, currentIndex: 0 }
-                                      : q
-                                  )
-                                );
-                                setCurrentTrack(tracks[0]);
-                                setIsPlaying(false);
-                                audioEngine.pause();
-                                try {
-                                  const { convertFileSrc } = await import('@tauri-apps/api/core');
-                                  audioEngine.element.src = convertFileSrc(tracks[0].path);
-                                  setCurrentTime(0);
-                                } catch (e) {
-                                  console.warn("Could not pre-load first track:", e);
+                            if (window.electronAPI) {
+                              const selected = await window.electronAPI.selectDirectory();
+                              if (selected) {
+                                setIsScanning(true);
+                                setScannedCount(0);
+                                setScannedFilesCount(0);
+                                const rootNode = await window.electronAPI.scanDirectoryNative(selected);
+                                if (rootNode) {
+                                  setRootFolder(rootNode);
+                                  const tracks = getAllTracksFromNode(rootNode);
+                                  setScannedCount(tracks.length);
+                                  if (tracks.length > 0) {
+                                    setQueues((prev) =>
+                                      prev.map((q) =>
+                                        q.id === activeQueueId
+                                          ? { ...q, tracks, currentIndex: 0 }
+                                          : q
+                                      )
+                                    );
+                                    setCurrentTrack(tracks[0]);
+                                    setIsPlaying(false);
+                                    audioEngine.pause();
+                                    audioEngine.element.src = `file://${tracks[0].path}`;
+                                    setCurrentTime(0);
+                                  }
+                                  setActiveHub('library');
                                 }
                               }
-                              setActiveHub('library');
                             }
                           } catch (err) {
                             console.warn(err);
@@ -2256,7 +2310,7 @@ export default function App() {
                             )}
                             {/* Edit tag hover overlay */}
                             <button
-                              onClick={() => setIsTagModalOpen(true)}
+                              onClick={() => setEditingTracks(currentTrack ? [currentTrack] : null)}
                               className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all duration-300 flex items-center justify-center opacity-0 group-hover:opacity-100 cursor-pointer"
                               title={t('editTags')}
                             >
@@ -2372,7 +2426,18 @@ export default function App() {
                       {/* SECONDARY VIEW: Lyrics */}
                       {nowPlayingTab === 'lyrics' && (
                         <div className="w-full h-full overflow-hidden flex flex-col justify-center animate-in fade-in duration-300">
-                          <SyncedLyricsPanel track={currentTrack} currentTime={currentTime} lang={lang} />
+                          <SyncedLyricsPanel 
+                            track={currentTrack} 
+                            currentTime={currentTime} 
+                            lang={lang} 
+                            rootFolder={rootFolder}
+                            isPlaying={isPlaying}
+                            onTogglePlay={handlePlayPause}
+                            onSeek={(time) => {
+                              audioEngine.seek(time);
+                              setCurrentTime(time);
+                            }}
+                          />
                         </div>
                       )}
 
@@ -2392,7 +2457,6 @@ export default function App() {
                             {lang === 'he' ? 'סימניות והערות' : 'Bookmarks & Notes'}
                           </h3>
                           
-                          {/* Add Bookmark form */}
                           <div className="flex gap-2 mb-3">
                             <input
                               type="text"
@@ -2414,7 +2478,6 @@ export default function App() {
                             </button>
                           </div>
 
-                          {/* List of bookmarks */}
                           <div className="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1.5">
                             {(!bookmarks[currentTrack.path] || bookmarks[currentTrack.path].length === 0) ? (
                               <p className="text-xs text-text-secondary text-center py-8">
@@ -2494,6 +2557,9 @@ export default function App() {
                         setIsScanning(false);
                       }}
                       lang={lang}
+                      onEditBatchTracks={setEditingTracks}
+                      onTrashBatchTracks={handleTrashBatchTracks}
+                      onMoveBatchTracks={handleMoveBatchTracks}
                     />
                   )}
                 </div>
@@ -2808,9 +2874,11 @@ export default function App() {
 
                       <div className="flex items-center justify-between text-xs text-text-secondary">
                         <span>{t('sleepTimerStatus')}</span>
-                        <span className={`font-bold ${sleepTimeLeft !== null || sleepEndSong ? 'text-brand' : 'text-text-muted'}`}>
+                        <span className={`font-bold ${sleepTimeLeft !== null || sleepEndSong || sleepSongsLeft !== null ? 'text-brand' : 'text-text-muted'}`}>
                           {sleepTimeLeft !== null 
                             ? t('sleepTimerOffIn', { time: formatTime(sleepTimeLeft) }) 
+                            : sleepSongsLeft !== null
+                            ? t('sleepTimerSongsLeft', { count: sleepSongsLeft })
                             : sleepEndSong 
                             ? t('sleepTimerEndSong') 
                             : t('sleepTimerInactive')}
@@ -2819,19 +2887,28 @@ export default function App() {
 
                       <div className="grid grid-cols-3 gap-2">
                         <button 
-                          onClick={() => startSleepTimer(15)} 
+                          onClick={() => {
+                            startSleepTimer(15);
+                            setSleepSongsLeft(null);
+                          }} 
                           className="py-2 rounded-lg bg-bg-app border border-border-custom hover:border-brand/40 text-[10px] font-bold text-text-secondary cursor-pointer transition-colors"
                         >
                           {t('sleepTimer15m')}
                         </button>
                         <button 
-                          onClick={() => startSleepTimer(30)} 
+                          onClick={() => {
+                            startSleepTimer(30);
+                            setSleepSongsLeft(null);
+                          }} 
                           className="py-2 rounded-lg bg-bg-app border border-border-custom hover:border-brand/40 text-[10px] font-bold text-text-secondary cursor-pointer transition-colors"
                         >
                           {t('sleepTimer30m')}
                         </button>
                         <button 
-                          onClick={() => startSleepTimer(60)} 
+                          onClick={() => {
+                            startSleepTimer(60);
+                            setSleepSongsLeft(null);
+                          }} 
                           className="py-2 rounded-lg bg-bg-app border border-border-custom hover:border-brand/40 text-[10px] font-bold text-text-secondary cursor-pointer transition-colors"
                         >
                           {t('sleepTimer60m')}
@@ -2839,6 +2916,7 @@ export default function App() {
                         <button 
                           onClick={() => {
                             setSleepTimeLeft(null);
+                            setSleepSongsLeft(null);
                             setSleepEndSong(!sleepEndSong);
                           }} 
                           className={`col-span-2 py-2 rounded-lg border text-[10px] font-bold cursor-pointer transition-colors ${
@@ -2849,17 +2927,76 @@ export default function App() {
                         >
                           {sleepEndSong ? t('sleepTimerEndSongBtnActive') : t('sleepTimerEndSongBtn')}
                         </button>
-                        {(sleepTimeLeft !== null || sleepEndSong) && (
+                        {(sleepTimeLeft !== null || sleepEndSong || sleepSongsLeft !== null) && (
                           <button 
                             onClick={() => {
                               setSleepTimeLeft(null);
                               setSleepEndSong(false);
+                              setSleepSongsLeft(null);
                             }} 
                             className="py-2 rounded-lg bg-red-950/20 border border-red-900/10 hover:bg-red-900/10 text-[10px] font-bold text-red-400 cursor-pointer transition-colors"
                           >
                             {t('sleepTimerCancelBtn')}
                           </button>
                         )}
+                      </div>
+
+                      {/* Custom Sleep Timer Controls */}
+                      <div className="flex gap-2 border-t border-border-custom pt-3 mt-1">
+                        <div className="flex-1 flex flex-col gap-1">
+                          <label className="text-[9px] text-text-muted font-bold uppercase">{t('sleepTimerCustomMinutes')}</label>
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              min="1"
+                              placeholder="10"
+                              value={customSleepMinutes}
+                              onChange={(e) => setCustomSleepMinutes(e.target.value)}
+                              className="w-full bg-bg-app border border-border-custom rounded-lg px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-brand/40 text-center"
+                            />
+                            <button
+                              onClick={() => {
+                                const m = parseInt(customSleepMinutes);
+                                if (m > 0) {
+                                  startSleepTimer(m);
+                                  setSleepSongsLeft(null);
+                                  setCustomSleepMinutes('');
+                                }
+                              }}
+                              className="px-2 py-1 bg-brand text-black hover:bg-brand-bright rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                            >
+                              {t('sleepTimerSet')}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 flex flex-col gap-1">
+                          <label className="text-[9px] text-text-muted font-bold uppercase">{t('sleepTimerCustomSongs')}</label>
+                          <div className="flex gap-1">
+                            <input
+                              type="number"
+                              min="1"
+                              placeholder="5"
+                              value={customSleepSongs}
+                              onChange={(e) => setCustomSleepSongs(e.target.value)}
+                              className="w-full bg-bg-app border border-border-custom rounded-lg px-2 py-1 text-xs text-text-primary focus:outline-none focus:border-brand/40 text-center"
+                            />
+                            <button
+                              onClick={() => {
+                                const s = parseInt(customSleepSongs);
+                                if (s > 0) {
+                                  setSleepSongsLeft(s);
+                                  setSleepTimeLeft(null);
+                                  setSleepEndSong(false);
+                                  setCustomSleepSongs('');
+                                }
+                              }}
+                              className="px-2 py-1 bg-brand text-black hover:bg-brand-bright rounded-lg text-[10px] font-bold transition-colors cursor-pointer"
+                            >
+                              {t('sleepTimerSet')}
+                            </button>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
@@ -2967,12 +3104,12 @@ export default function App() {
       </footer>
 
       {/* Metadata ID3 Tag Editor Modal */}
-      {currentTrack && (
+      {editingTracks && editingTracks.length > 0 && (
         <TagEditorModal
-          track={currentTrack}
-          isOpen={isTagModalOpen}
-          onClose={() => setIsTagModalOpen(false)}
-          onSave={handleSaveTags}
+          tracks={editingTracks}
+          isOpen={editingTracks !== null && editingTracks.length > 0}
+          onClose={() => setEditingTracks(null)}
+          onSave={handleSaveBatchTags}
           lang={lang}
         />
       )}
@@ -2993,4 +3130,3 @@ function updateTrackInTree(node: FolderNode, trackId: string, updates: Partial<T
     subfolders: updatedSubfolders,
   };
 }
-

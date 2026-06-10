@@ -11,16 +11,12 @@ export interface Track {
   lyrics?: string;
   path: string;
   metadataLoaded?: boolean;
-  rating?: number; // 1-5 stars
-  playCount?: number;
-  skipCount?: number;
-  lastPlayed?: number; // timestamp
 }
 
 export interface FolderNode {
   name: string;
   path: string;
-  handle?: FileSystemDirectoryHandle;
+  handle: FileSystemDirectoryHandle;
   subfolders: FolderNode[];
   tracks: Track[];
 }

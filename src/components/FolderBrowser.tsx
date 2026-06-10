@@ -12,7 +12,14 @@ import {
   FolderClosed,
   Upload,
   Shuffle,
-  Check
+  Check,
+  CheckSquare,
+  Square,
+  Trash2,
+  Edit3,
+  Copy,
+  Move,
+  X
 } from 'lucide-react';
 
 interface FolderBrowserProps {
@@ -26,6 +33,10 @@ interface FolderBrowserProps {
   onScanUpdate?: (scannedCount: number, filesScanned: number) => void;
   onScanEnd?: () => void;
   lang?: 'he' | 'en';
+  // Advanced batch actions
+  onEditBatchTracks?: (tracks: Track[]) => void;
+  onTrashBatchTracks?: (tracks: Track[]) => void;
+  onMoveBatchTracks?: (tracks: Track[], targetDir: string, isMove: boolean) => void;
 }
 
 const FolderBrowserTranslations = {
@@ -45,6 +56,18 @@ const FolderBrowserTranslations = {
     addToQueue: 'הוסף לתור',
     showInFolder: 'הצג בתיקייה',
     library: 'ספריית תיקיות',
+    multiSelect: 'בחירה מרובה',
+    cancel: 'ביטול',
+    selectedCount: 'נבחרו {count} שירים',
+    batchPlay: 'נגן',
+    batchQueue: 'הוסף לתור',
+    batchEdit: 'ערוך תגיות',
+    batchCopy: 'העתק',
+    batchMove: 'העבר',
+    batchTrash: 'מחק',
+    confirmTrashTitle: 'מחיקת שירים לסל המיחזור',
+    confirmTrashBody: 'האם אתה בטוח שברצונך להעביר {count} שירים לסל המיחזור של מערכת ההפעלה?',
+    confirm: 'אשר',
   },
   en: {
     selectFolder: 'Select Folder',
@@ -62,6 +85,18 @@ const FolderBrowserTranslations = {
     addToQueue: 'Add to Queue',
     showInFolder: 'Show in Folder',
     library: 'Folder Library',
+    multiSelect: 'Select Multiple',
+    cancel: 'Cancel',
+    selectedCount: '{count} tracks selected',
+    batchPlay: 'Play',
+    batchQueue: 'Queue',
+    batchEdit: 'Edit Tags',
+    batchCopy: 'Copy',
+    batchMove: 'Move',
+    batchTrash: 'Trash',
+    confirmTrashTitle: 'Move Tracks to Recycle Bin',
+    confirmTrashBody: 'Are you sure you want to move the selected {count} tracks to the system Recycle Bin?',
+    confirm: 'Confirm',
   }
 };
 
@@ -98,10 +133,20 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
   onScanUpdate,
   onScanEnd,
   lang = 'he',
+  onEditBatchTracks,
+  onTrashBatchTracks,
+  onMoveBatchTracks
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [addedTrackIds, setAddedTrackIds] = useState<Record<string, boolean>>({});
+
+  // Multi-select states
+  const [isMultiSelect, setIsMultiSelect] = useState(false);
+  const [selectedTracks, setSelectedTracks] = useState<Track[]>([]);
+
+  // Confirmation overlay states
+  const [confirmTrash, setConfirmTrash] = useState(false);
 
   const localT = (key: keyof typeof FolderBrowserTranslations.he, params?: Record<string, string | number>) => {
     const activeLang = lang || 'he';
@@ -116,36 +161,38 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
 
   const handleSelectRoot = async () => {
     try {
-      setLoading(true);
-      if (onScanStart) onScanStart();
-      
-      const isTauri = typeof window !== 'undefined' && (window as any).__TAURI_INTERNALS__ !== undefined;
-      
-      if (isTauri) {
-        const { scanDirectoryTauri } = await import('../utils/fileSystem');
-        const rootNode = await scanDirectoryTauri();
-        
-        if (rootNode) {
-          onRootFolderLoaded(rootNode);
-          const count = getAllTracksFromNode(rootNode).length;
-          if (onScanUpdate) onScanUpdate(count, count);
-        }
-      } else {
+      const isWeb = !window.electronAPI;
+      if (isWeb) {
         if (!(window as any).showDirectoryPicker) {
           alert(lang === 'he' ? 'הדפדפן שלך אינו תומך בגישה לתיקיות מקומיות. אנא השתמש בכרום (Chrome) או אדג\' (Edge).' : 'Your browser does not support local folder access. Please use Chrome or Edge.');
           return;
-         }
+        }
         const handle = await (window as any).showDirectoryPicker();
         if (handle) {
+          setLoading(true);
+          if (onScanStart) onScanStart();
           const { scanDirectory } = await import('../utils/fileSystem');
           const rootNode = await scanDirectory(handle, (_updatedNode, count, scanned) => {
             if (onScanUpdate) onScanUpdate(count, scanned);
           });
           onRootFolderLoaded(rootNode);
+          localStorage.setItem('musicolet-library-path', handle.name);
+        }
+      } else {
+        const selected = await window.electronAPI.selectDirectory();
+        if (selected) {
+          setLoading(true);
+          if (onScanStart) onScanStart();
+          const rootNode = await window.electronAPI.scanDirectoryNative(selected);
+          if (rootNode) {
+            onRootFolderLoaded(rootNode);
+            const count = getAllTracksFromNode(rootNode).length;
+            if (onScanUpdate) onScanUpdate(count, count);
+          }
         }
       }
     } catch (err) {
-      console.warn('Directory picking aborted or failed:', err);
+      console.warn('Directory picking failed:', err);
     } finally {
       setLoading(false);
       if (onScanEnd) onScanEnd();
@@ -192,15 +239,86 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
     );
   };
 
+  const toggleTrackSelection = (track: Track) => {
+    setSelectedTracks((prev) => {
+      const exists = prev.some(t => t.id === track.id);
+      if (exists) {
+        return prev.filter(t => t.id !== track.id);
+      } else {
+        return [...prev, track];
+      }
+    });
+  };
+
+  const handleToggleMultiSelect = () => {
+    setIsMultiSelect(!isMultiSelect);
+    setSelectedTracks([]);
+  };
+
+  // --- Batch Actions ---
+
+  const handleBatchPlay = () => {
+    if (selectedTracks.length === 0) return;
+    onPlayTracks(selectedTracks);
+    setIsMultiSelect(false);
+    setSelectedTracks([]);
+  };
+
+  const handleBatchQueue = () => {
+    if (selectedTracks.length === 0) return;
+    onAddTracks(selectedTracks);
+    setIsMultiSelect(false);
+    setSelectedTracks([]);
+  };
+
+  const handleBatchEdit = () => {
+    if (selectedTracks.length === 0 || !onEditBatchTracks) return;
+    onEditBatchTracks(selectedTracks);
+  };
+
+  const handleBatchMoveCopy = async (isMove: boolean) => {
+    if (selectedTracks.length === 0 || !onMoveBatchTracks) return;
+    try {
+      const isWeb = !window.electronAPI;
+      let targetDir = '';
+
+      if (isWeb) {
+        if (!(window as any).showDirectoryPicker) return;
+        const handle = await (window as any).showDirectoryPicker();
+        if (handle) targetDir = handle.name;
+      } else {
+        const selected = await window.electronAPI.selectDirectory();
+        if (selected) targetDir = selected;
+      }
+
+      if (targetDir) {
+        onMoveBatchTracks(selectedTracks, targetDir, isMove);
+        setIsMultiSelect(false);
+        setSelectedTracks([]);
+      }
+    } catch (err) {
+      console.warn("Folder picker aborted:", err);
+    }
+  };
+
+  const handleBatchTrash = () => {
+    if (selectedTracks.length === 0 || !onTrashBatchTracks) return;
+    onTrashBatchTracks(selectedTracks);
+    setConfirmTrash(false);
+    setIsMultiSelect(false);
+    setSelectedTracks([]);
+  };
+
   const filteredRoot = rootFolder ? getFilteredFolderTree(rootFolder, exclusionEnabled, exclusionThreshold) : null;
   const searchResults = filteredRoot && searchQuery ? getFilteredTracks(filteredRoot, searchQuery) : [];
   const scannedTracksCount = filteredRoot ? getAllTracksFromNode(filteredRoot).length : 0;
 
+
   return (
-    <div className="h-full flex flex-col gap-4" style={{ textAlign: lang === 'he' ? 'right' : 'left' }} dir={lang === 'he' ? 'rtl' : 'ltr'}>
+    <div className="h-full flex flex-col gap-4 relative" style={{ textAlign: lang === 'he' ? 'right' : 'left' }} dir={lang === 'he' ? 'rtl' : 'ltr'}>
       
       {/* Title & Scan Folder Trigger */}
-      <div className="flex items-center justify-between pb-2 border-b border-border-custom">
+      <div className="flex items-center justify-between pb-2 border-b border-border-custom flex-shrink-0">
         <div className="flex flex-col">
           <h2 className="text-sm font-bold text-text-primary tracking-wide">{localT('library')}</h2>
           {loading && (
@@ -210,29 +328,45 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
           )}
         </div>
         
-        <button
-          onClick={handleSelectRoot}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-bg-card border border-border-custom hover:bg-bg-card-hover text-text-primary transition-colors cursor-pointer disabled:opacity-50"
-        >
-          <Upload size={13} />
-          <span>{loading ? localT('scanning', { count: scannedTracksCount }) : localT('selectFolder')}</span>
-        </button>
+        <div className="flex gap-2">
+          {filteredRoot && scannedTracksCount > 0 && (
+            <button
+              onClick={handleToggleMultiSelect}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition-colors cursor-pointer select-none ${
+                isMultiSelect 
+                  ? 'bg-brand/10 border-brand/40 text-brand' 
+                  : 'bg-bg-card border-border-custom hover:bg-bg-card-hover text-text-primary'
+              }`}
+            >
+              <CheckSquare size={13} />
+              <span>{isMultiSelect ? localT('cancel') : localT('multiSelect')}</span>
+            </button>
+          )}
+
+          <button
+            onClick={handleSelectRoot}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-bg-card border border-border-custom hover:bg-bg-card-hover text-text-primary transition-colors cursor-pointer disabled:opacity-50 select-none"
+          >
+            <Upload size={13} />
+            <span>{loading ? localT('scanning', { count: scannedTracksCount }) : localT('selectFolder')}</span>
+          </button>
+        </div>
       </div>
 
       {/* Prominent Play All & Shuffle All buttons */}
-      {filteredRoot && scannedTracksCount > 0 && (
-        <div className="flex gap-2">
+      {filteredRoot && scannedTracksCount > 0 && !isMultiSelect && (
+        <div className="flex gap-2 flex-shrink-0">
           <button
             onClick={() => handlePlayAll(false)}
-            className="flex-1 py-2 rounded-xl bg-brand hover:bg-brand-bright text-black text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow shadow-brand/10 hover:scale-102"
+            className="flex-1 py-2 rounded-xl bg-brand hover:bg-brand-bright text-black text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow shadow-brand/10 hover:scale-102 select-none"
           >
             <Play size={13} className="fill-current" />
             <span>{localT('playAll')}</span>
           </button>
           <button
             onClick={() => handlePlayAll(true)}
-            className="flex-1 py-2 rounded-xl bg-bg-card border border-border-custom hover:bg-bg-card-hover text-text-primary text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer hover:scale-102"
+            className="flex-1 py-2 rounded-xl bg-bg-card border border-border-custom hover:bg-bg-card-hover text-text-primary text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer hover:scale-102 select-none"
           >
             <Shuffle size={13} />
             <span>{localT('shuffleAll')}</span>
@@ -241,8 +375,8 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
       )}
 
       {/* Search Input (Spotify styled pill) */}
-      {rootFolder && (
-        <div className="relative">
+      {rootFolder && !isMultiSelect && (
+        <div className="relative flex-shrink-0">
           <input
             type="text"
             placeholder={localT('searchPlaceholder')}
@@ -255,7 +389,7 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
       )}
 
       {/* Main Browser Window */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <div className="flex-1 overflow-y-auto custom-scrollbar pr-0.5">
         {!filteredRoot ? (
           /* Empty State - Guidance Illustration */
           <div className="h-full flex flex-col items-center justify-center text-center p-6 gap-3 select-none">
@@ -282,7 +416,7 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
               </p>
             </div>
           </div>
-        ) : searchQuery ? (
+        ) : searchQuery && !isMultiSelect ? (
           /* Search Results List */
           <div className="flex flex-col gap-1">
             <h4 className="text-[10px] font-bold text-text-muted uppercase tracking-wider mb-2">
@@ -304,7 +438,7 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
                       <Music size={13} />
                     </div>
                     <div className={`overflow-hidden flex-1 min-w-0 ${lang === 'he' ? 'text-right' : 'text-left'}`}>
-                      <div className="text-xs font-semibold text-text-primary truncate group-hover:text-brand transition-colors">
+                      <div className="text-xs font-semibold text-text-primary truncate group-hover:text-brand transition-colors font-sans">
                         {track.name}
                       </div>
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -354,9 +488,116 @@ export const FolderBrowser: React.FC<FolderBrowserProps> = ({
             addedTrackIds={addedTrackIds}
             onAddTrackWithFeedback={handleAddWithFeedback}
             lang={lang}
+            isMultiSelect={isMultiSelect}
+            selectedTrackIds={selectedTracks.reduce((map, t) => {
+              map[t.id] = true;
+              return map;
+            }, {} as Record<string, boolean>)}
+            onToggleSelection={toggleTrackSelection}
           />
         )}
       </div>
+
+      {/* Floating Batch Action Panel */}
+      {isMultiSelect && selectedTracks.length > 0 && (
+        <div className="absolute bottom-2 left-2 right-2 z-40 p-4 bg-neutral-950 border border-brand/20 rounded-2xl shadow-2xl flex flex-col gap-3 animate-in slide-in-from-bottom-3 duration-250 select-none">
+          <div className="flex items-center justify-between border-b border-white/5 pb-2">
+            <span className="text-xs font-bold text-brand">{localT('selectedCount', { count: selectedTracks.length })}</span>
+            <button 
+              onClick={() => setSelectedTracks([])}
+              className="text-neutral-500 hover:text-neutral-300 transition-colors cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          </div>
+
+          <div className="flex gap-2 flex-wrap items-center justify-between">
+            {/* Core Play / Queue actions */}
+            <div className="flex gap-1.5">
+              <button
+                onClick={handleBatchPlay}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-brand hover:bg-brand-bright text-black text-xs font-bold cursor-pointer transition-colors shadow shadow-brand/10"
+              >
+                <Play size={12} className="fill-current" />
+                <span>{localT('batchPlay')}</span>
+              </button>
+              <button
+                onClick={handleBatchQueue}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-neutral-905 border border-white/10 hover:border-brand/40 text-neutral-300 text-xs font-semibold cursor-pointer transition-colors"
+              >
+                <Plus size={13} />
+                <span>{localT('batchQueue')}</span>
+              </button>
+            </div>
+
+            {/* Advanced batch options */}
+            <div className="flex gap-1.5">
+              <button
+                onClick={handleBatchEdit}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-white/5 text-neutral-300 hover:text-white text-[10px] font-bold cursor-pointer transition-colors"
+                title={localT('batchEdit')}
+              >
+                <Edit3 size={11} />
+                <span>{localT('batchEdit')}</span>
+              </button>
+              <button
+                onClick={() => handleBatchMoveCopy(false)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-white/5 text-neutral-300 hover:text-white text-[10px] font-bold cursor-pointer transition-colors"
+                title={localT('batchCopy')}
+              >
+                <Copy size={11} />
+                <span>{localT('batchCopy')}</span>
+              </button>
+              <button
+                onClick={() => handleBatchMoveCopy(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-neutral-900 hover:bg-neutral-800 border border-white/5 text-neutral-300 hover:text-white text-[10px] font-bold cursor-pointer transition-colors"
+                title={localT('batchMove')}
+              >
+                <Move size={11} />
+                <span>{localT('batchMove')}</span>
+              </button>
+              <button
+                onClick={() => setConfirmTrash(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-red-950/20 border border-red-900/20 hover:border-red-500/30 text-red-400 text-[10px] font-bold cursor-pointer transition-colors"
+                title={localT('batchTrash')}
+              >
+                <Trash2 size={11} />
+                <span>{localT('batchTrash')}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recycle Bin confirmation dialog overlay */}
+      {confirmTrash && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+          <div className="w-full max-w-sm bg-neutral-950 border border-white/10 rounded-2xl p-5 shadow-2xl flex flex-col gap-4 text-right animate-in fade-in zoom-in-95 duration-150">
+            <h3 className="text-xs font-bold text-text-primary flex items-center gap-1.5 text-red-400">
+              <Trash2 size={14} />
+              <span>{localT('confirmTrashTitle')}</span>
+            </h3>
+            <p className="text-[11px] text-text-secondary leading-relaxed font-semibold">
+              {localT('confirmTrashBody', { count: selectedTracks.length })}
+            </p>
+            <div className="flex justify-end gap-2 mt-2">
+              <button
+                onClick={() => setConfirmTrash(false)}
+                className="px-4 py-1.5 rounded-lg border border-white/5 bg-neutral-900 hover:bg-neutral-800 text-xs font-bold text-neutral-300 transition-colors cursor-pointer"
+              >
+                {localT('cancel')}
+              </button>
+              <button
+                onClick={handleBatchTrash}
+                className="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-xs font-bold text-white transition-colors cursor-pointer"
+              >
+                {localT('confirm')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
@@ -370,6 +611,9 @@ interface TreeNodeProps {
   addedTrackIds: Record<string, boolean>;
   onAddTrackWithFeedback: (track: Track) => void;
   lang?: 'he' | 'en';
+  isMultiSelect: boolean;
+  selectedTrackIds?: Record<string, boolean>;
+  onToggleSelection?: (track: Track) => void;
 }
 
 const FolderTreeNode: React.FC<TreeNodeProps> = ({ 
@@ -379,9 +623,12 @@ const FolderTreeNode: React.FC<TreeNodeProps> = ({
   depth,
   addedTrackIds,
   onAddTrackWithFeedback,
-  lang = 'he'
+  lang = 'he',
+  isMultiSelect,
+  selectedTrackIds = {},
+  onToggleSelection
 }) => {
-  const [isOpen, setIsOpen] = useState(depth === 0); // Root is expanded initially
+  const [isOpen, setIsOpen] = useState(depth === 0);
   const allTracks = getAllTracksFromNode(node);
 
   return (
@@ -409,7 +656,7 @@ const FolderTreeNode: React.FC<TreeNodeProps> = ({
         </div>
 
         {/* Quick actions shown on hover */}
-        {allTracks.length > 0 && (
+        {allTracks.length > 0 && !isMultiSelect && (
           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>
             <button
               onClick={() => onPlayTracks(allTracks)}
@@ -442,26 +689,47 @@ const FolderTreeNode: React.FC<TreeNodeProps> = ({
               addedTrackIds={addedTrackIds}
               onAddTrackWithFeedback={onAddTrackWithFeedback}
               lang={lang}
+              isMultiSelect={isMultiSelect}
+              selectedTrackIds={selectedTrackIds}
+              onToggleSelection={onToggleSelection}
             />
           ))}
 
-          {/* Files direct child of this node */}
+          {/* Files child list */}
           {node.tracks.map((track) => {
             const isAdded = addedTrackIds[track.id];
+            const isChecked = !!selectedTrackIds[track.id];
+            
             return (
               <div
                 key={track.id}
-                onClick={() => onPlayTracks([track])}
-                className="flex items-center justify-between p-1.5 rounded-lg hover:bg-bg-card-hover cursor-pointer group transition-colors border border-transparent hover:border-border-custom"
+                onClick={() => {
+                  if (isMultiSelect && onToggleSelection) {
+                    onToggleSelection(track);
+                  } else {
+                    onPlayTracks([track]);
+                  }
+                }}
+                className={`flex items-center justify-between p-1.5 rounded-lg transition-colors border cursor-pointer ${
+                  isChecked
+                    ? 'bg-brand/5 border-brand/20 shadow-sm'
+                    : 'bg-transparent border-transparent hover:bg-bg-card-hover hover:border-border-custom'
+                }`}
                 style={{
                   paddingRight: lang === 'he' ? `${Math.max(12, (depth + 1) * 8)}px` : '12px',
                   paddingLeft: lang === 'en' ? `${Math.max(12, (depth + 1) * 8)}px` : '12px',
                 }}
               >
                 <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
-                  <Music size={12} className="text-text-secondary group-hover:text-brand transition-colors flex-shrink-0" />
+                  {isMultiSelect ? (
+                    <div className="text-brand flex-shrink-0 flex items-center justify-center pr-0.5 pl-1.5">
+                      {isChecked ? <CheckSquare size={13} /> : <Square size={13} className="text-text-muted" />}
+                    </div>
+                  ) : (
+                    <Music size={12} className="text-text-secondary group-hover:text-brand transition-colors flex-shrink-0" />
+                  )}
                   <div className={`overflow-hidden flex-1 min-w-0 ${lang === 'he' ? 'text-right' : 'text-left'}`}>
-                    <div className="text-xs text-text-primary truncate group-hover:text-brand transition-colors font-semibold">
+                    <div className={`text-xs truncate font-semibold ${isChecked ? 'text-brand' : 'text-text-primary'}`}>
                       {track.name}
                     </div>
                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -477,29 +745,31 @@ const FolderTreeNode: React.FC<TreeNodeProps> = ({
                   </div>
                 </div>
                 
-                <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
-                  {window.electronAPI && (
-                    <button
-                      onClick={() => window.electronAPI.showItemInFolder(track.path)}
-                      className="w-5.5 h-5.5 rounded hover:bg-bg-card-hover text-text-secondary hover:text-brand flex items-center justify-center transition-all cursor-pointer opacity-0 group-hover:opacity-100"
-                      title={lang === 'he' ? 'הצג בתיקייה' : 'Show in Folder'}
-                    >
-                      <FolderOpen size={11} />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => onAddTrackWithFeedback(track)}
-                    className={`w-5.5 h-5.5 rounded hover:bg-bg-card-hover text-text-secondary hover:text-brand flex items-center justify-center transition-all cursor-pointer ${
-                      isAdded ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-                    }`}
-                  >
-                    {isAdded ? (
-                      <Check size={12} className="text-green-500 animate-in zoom-in duration-200" />
-                    ) : (
-                      <Plus size={12} />
+                {!isMultiSelect && (
+                  <div className="flex items-center gap-1 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                    {window.electronAPI && (
+                      <button
+                        onClick={() => window.electronAPI.showItemInFolder(track.path)}
+                        className="w-5.5 h-5.5 rounded hover:bg-bg-card-hover text-text-secondary hover:text-brand flex items-center justify-center transition-all cursor-pointer opacity-0 group-hover:opacity-100"
+                        title={lang === 'he' ? 'הצג בתיקייה' : 'Show in Folder'}
+                      >
+                        <FolderOpen size={11} />
+                      </button>
                     )}
-                  </button>
-                </div>
+                    <button
+                      onClick={() => onAddTrackWithFeedback(track)}
+                      className={`w-5.5 h-5.5 rounded hover:bg-bg-card-hover text-text-secondary hover:text-brand flex items-center justify-center transition-all cursor-pointer ${
+                        isAdded ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      }`}
+                    >
+                      {isAdded ? (
+                        <Check size={12} className="text-green-500 animate-in zoom-in duration-200" />
+                      ) : (
+                        <Plus size={12} />
+                      )}
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })}
